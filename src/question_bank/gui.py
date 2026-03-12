@@ -15,22 +15,23 @@ DATA_FILE = ROOT_DIR / "data" / "questions.json"
 OPTION_LABELS = ("A", "B", "C", "D")
 COURSE_NAME = "Siber Guvenlige Giris"
 COLORS = {
-    "bg": "#f4f5f7",
+    "bg": "#f5f6f8",
     "surface": "#ffffff",
-    "surface_alt": "#f0f2f5",
+    "surface_alt": "#eef1f4",
     "card": "#ffffff",
-    "line": "#e3e6ea",
-    "accent": "#2563eb",
-    "accent_dark": "#1e40af",
-    "accent_soft": "#dbe7ff",
-    "text": "#111827",
-    "muted": "#6b7280",
-    "success_bg": "#dcfce7",
-    "success_fg": "#166534",
-    "danger_bg": "#fee2e2",
-    "danger_fg": "#b91c1c",
-    "neutral_bg": "#f8fafc",
-    "table_alt": "#f9fafb",
+    "line": "#e1e5ea",
+    "accent": "#1e88e5",
+    "accent_dark": "#1565c0",
+    "accent_soft": "#e3f2fd",
+    "text": "#121417",
+    "muted": "#5f6b7a",
+    "success_bg": "#dff7e3",
+    "success_fg": "#146c43",
+    "danger_bg": "#ffe0e0",
+    "danger_fg": "#b3261e",
+    "neutral_bg": "#f3f5f7",
+    "option_bg": "#e7f1ff",
+    "table_alt": "#f7f8fa",
 }
 
 
@@ -44,22 +45,35 @@ class QuestionBankApp:
 
         self.repository = QuestionRepository(DATA_FILE)
         self.questions = self.repository.load_questions()
-        self.filtered_questions: list[Question] = []
         self.tree_question_map: dict[str, Question] = {}
-        self.current_question: Question | None = None
-        self.current_answer = tk.IntVar(value=-1)
         self.add_correct_answer = tk.StringVar(value="A")
         self.solved_questions: set[tuple] = set()
-        self.study_start_time: float | None = None
-        self.study_timer_job: str | None = None
         self.notebook: ttk.Notebook | None = None
-        self.study_tab: ttk.Frame | None = None
-        self.study_ready = False
-        self.question_counter_label: ttk.Label | None = None
-        self.study_info: ttk.Label | None = None
-        self.timer_label: ttk.Label | None = None
         self.home_progress_label: ttk.Label | None = None
         self.home_total_label: ttk.Label | None = None
+
+        self.session_window: tk.Toplevel | None = None
+        self.session_start_time: float | None = None
+        self.session_timer_job: str | None = None
+        self.session_questions: list[Question] = []
+        self.session_answers: list[int | None] = []
+        self.session_correct: list[bool | None] = []
+        self.session_index = 0
+        self.session_correct_count = 0
+        self.session_wrong_count = 0
+        self.session_size = 40
+        self.last_session_keys: set[tuple] = set()
+        self.session_completed = False
+
+        self.session_question_text: tk.Text | None = None
+        self.session_option_buttons: list[tk.Button] = []
+        self.session_progress_label: tk.Label | None = None
+        self.session_counts_label: tk.Label | None = None
+        self.session_timer_label: tk.Label | None = None
+        self.session_result_label: tk.Label | None = None
+        self.session_explanation_label: tk.Label | None = None
+        self.session_prev_button: tk.Button | None = None
+        self.session_next_button: tk.Button | None = None
 
         self._configure_styles()
         self._build_ui()
@@ -212,7 +226,7 @@ class QuestionBankApp:
         self.home_tab.columnconfigure(1, weight=2, minsize=260)
         self.home_tab.rowconfigure(0, weight=1)
 
-        hero = tk.Frame(self.home_tab, bg=COLORS["card"], highlightthickness=1, highlightbackground=COLORS["line"])
+        hero = tk.Frame(self.home_tab, bg=COLORS["card"])
         hero.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
         hero.columnconfigure(0, weight=1)
 
@@ -239,7 +253,7 @@ class QuestionBankApp:
             row=3, column=0, sticky="w", padx=24, pady=(20, 24)
         )
 
-        side = tk.Frame(self.home_tab, bg=COLORS["surface"], highlightthickness=1, highlightbackground=COLORS["line"])
+        side = tk.Frame(self.home_tab, bg=COLORS["surface"])
         side.grid(row=0, column=1, sticky="nsew")
         side.columnconfigure(0, weight=1)
 
@@ -259,163 +273,477 @@ class QuestionBankApp:
             justify="left",
         ).grid(row=2, column=0, sticky="w", padx=18, pady=(0, 18))
 
-    def _ensure_study_tab(self) -> None:
-        if self.study_tab is not None or self.notebook is None:
-            return
-
-        self.study_tab = ttk.Frame(self.notebook, padding=18, style="Surface.TFrame")
-        self.notebook.insert(1, self.study_tab, text="Cozum Oturumu")
-        self._build_study_tab()
-        self.study_ready = True
-
     def start_study_session(self) -> None:
-        self._ensure_study_tab()
-        if self.study_tab is None or self.notebook is None:
+        self.questions = self.repository.load_questions()
+        if not self.questions:
+            messagebox.showwarning("Bilgi", "Soru havuzu bos. Once soru ekleyin.")
             return
 
-        self.prepare_study_queue()
-        self._start_study_timer()
-        self.notebook.select(self.study_tab)
-
-    def _start_study_timer(self) -> None:
-        if self.study_timer_job is not None:
-            self.root.after_cancel(self.study_timer_job)
-            self.study_timer_job = None
-
-        self.study_start_time = time.monotonic()
-        self._tick_study_timer()
-
-    def _tick_study_timer(self) -> None:
-        if self.study_start_time is None or self.timer_label is None:
+        if self.session_window is not None and self.session_window.winfo_exists():
+            restart = messagebox.askyesno("Oturum Acik", "Mevcut oturum acik. Yeni oturum baslatilsin mi?")
+            if restart:
+                self._reset_session()
+            else:
+                self.session_window.lift()
             return
 
-        elapsed = int(time.monotonic() - self.study_start_time)
-        minutes = elapsed // 60
-        seconds = elapsed % 60
-        self.timer_label.config(text=f"Gecen sure: {minutes} dk {seconds:02d} sn")
-        self.study_timer_job = self.root.after(1000, self._tick_study_timer)
+        self._create_session_window()
+        self._reset_session()
 
-    def _build_study_tab(self) -> None:
-        self.study_tab.columnconfigure(0, weight=4)
-        self.study_tab.columnconfigure(1, weight=1, minsize=280)
-        self.study_tab.rowconfigure(0, weight=1)
+    def _create_session_window(self) -> None:
+        self.session_window = tk.Toplevel(self.root)
+        self.session_window.title("Cozum Oturumu")
+        self.session_window.geometry("980x700")
+        self.session_window.minsize(860, 620)
+        self.session_window.configure(bg=COLORS["bg"])
+        self.session_window.protocol("WM_DELETE_WINDOW", self._close_session_window)
 
-        left = tk.Frame(self.study_tab, bg=COLORS["card"], highlightthickness=1, highlightbackground=COLORS["line"])
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
-        left.columnconfigure(0, weight=1)
-        left.rowconfigure(1, weight=1)
+        self.session_window.columnconfigure(0, weight=1)
+        self.session_window.rowconfigure(1, weight=1)
 
-        question_head = tk.Frame(left, bg=COLORS["card"])
-        question_head.grid(row=0, column=0, sticky="ew", padx=24, pady=(20, 8))
-        question_head.columnconfigure(1, weight=1)
+        header = tk.Frame(self.session_window, bg=COLORS["bg"])
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(16, 8))
+        header.columnconfigure(1, weight=1)
 
-        ttk.Label(question_head, text="Soru", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
-        self.question_counter_label = ttk.Label(question_head, text="", style="Metric.TLabel")
-        self.question_counter_label.grid(row=0, column=1, sticky="e")
-        body = tk.Frame(left, bg=COLORS["card"])
-        body.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 18))
-        body.columnconfigure(0, weight=1)
-        body.rowconfigure(0, weight=1)
+        self.session_progress_label = tk.Label(
+            header,
+            text="Soru 1/40",
+            bg=COLORS["bg"],
+            fg=COLORS["text"],
+            font=("Bahnschrift", 14, "bold"),
+        )
+        self.session_progress_label.grid(row=0, column=0, sticky="w")
 
-        self.question_text = tk.Text(
-            body,
+        self.session_counts_label = tk.Label(
+            header,
+            text="Dogru: 0  Yanlis: 0",
+            bg=COLORS["bg"],
+            fg=COLORS["muted"],
+            font=("Segoe UI", 10),
+        )
+        self.session_counts_label.grid(row=0, column=1, sticky="w", padx=(16, 0))
+
+        self.session_timer_label = tk.Label(
+            header,
+            text="Sure: 0:00",
+            bg=COLORS["bg"],
+            fg=COLORS["muted"],
+            font=("Segoe UI", 10),
+        )
+        self.session_timer_label.grid(row=0, column=2, sticky="e")
+
+        content = tk.Frame(self.session_window, bg=COLORS["surface"])
+        content.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 16))
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(1, weight=1)
+
+        question_title = tk.Label(
+            content,
+            text="Soru Metni",
+            bg=COLORS["surface"],
+            fg=COLORS["muted"],
+            font=("Segoe UI Semibold", 10),
+        )
+        question_title.grid(row=0, column=0, sticky="w", padx=4, pady=(16, 6))
+
+        self.session_question_text = tk.Text(
+            content,
             wrap="word",
             font=("Bahnschrift", 16),
             state="disabled",
             relief="flat",
             bd=0,
-            padx=0,
-            pady=0,
-            background=COLORS["card"],
+            padx=6,
+            pady=6,
+            background=COLORS["surface"],
             foreground=COLORS["text"],
             insertbackground=COLORS["text"],
             highlightthickness=0,
         )
-        self.question_text.grid(row=0, column=0, sticky="nsew")
+        self.session_question_text.grid(row=1, column=0, sticky="nsew", padx=4)
 
-        options_shell = tk.Frame(left, bg=COLORS["card"])
-        options_shell.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 24))
+        options_shell = tk.Frame(content, bg=COLORS["surface"])
+        options_shell.grid(row=2, column=0, sticky="ew", padx=4, pady=(16, 8))
         options_shell.columnconfigure(0, weight=1)
 
-        self.option_buttons: list[tk.Radiobutton] = []
+        self.session_option_buttons = []
         for index, label in enumerate(OPTION_LABELS):
-            button = tk.Radiobutton(
+            button = tk.Button(
                 options_shell,
                 text=f"{label}) ",
-                value=index,
-                variable=self.current_answer,
-                indicatoron=False,
                 anchor="w",
                 justify="left",
-                padx=16,
-                pady=13,
+                wraplength=760,
+                padx=12,
+                pady=12,
                 bd=0,
                 relief="flat",
-                highlightthickness=1,
-                highlightbackground=COLORS["line"],
-                activebackground=COLORS["accent_soft"],
-                activeforeground=COLORS["accent_dark"],
-                bg=COLORS["card"],
+                bg=COLORS["option_bg"],
                 fg=COLORS["text"],
-                selectcolor=COLORS["accent_soft"],
+                activebackground=COLORS["accent_soft"],
+                activeforeground=COLORS["text"],
                 font=("Segoe UI", 11),
+                command=lambda idx=index: self._on_option_selected(idx),
             )
             button.grid(row=index, column=0, sticky="ew", pady=6)
-            self.option_buttons.append(button)
+            self.session_option_buttons.append(button)
 
-        right = tk.Frame(self.study_tab, bg=COLORS["surface"], highlightthickness=0)
-        right.grid(row=0, column=1, sticky="nsew")
-        right.columnconfigure(0, weight=1)
-        right.rowconfigure(1, weight=1)
-
-        control_card = tk.Frame(right, bg=COLORS["surface"], highlightthickness=0)
-        control_card.grid(row=0, column=0, sticky="ew")
-        control_card.columnconfigure(0, weight=1)
-
-        ttk.Label(control_card, text="Oturum Kontrolu", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", padx=4, pady=(0, 4))
-        ttk.Label(control_card, text="Soru akisini yonet ve sureyi takip et.", style="CardBody.TLabel").grid(
-            row=1, column=0, sticky="w", padx=4, pady=(0, 12)
+        self.session_result_label = tk.Label(
+            content,
+            text="Cevabini sec.",
+            bg=COLORS["surface"],
+            fg=COLORS["muted"],
+            font=("Segoe UI Semibold", 10),
         )
+        self.session_result_label.grid(row=3, column=0, sticky="w", padx=4, pady=(8, 8))
 
-        self.timer_label = ttk.Label(control_card, text="Gecen sure: 0 dk 00 sn", style="Metric.TLabel")
-        self.timer_label.grid(row=2, column=0, sticky="w", padx=4)
-
-        self.study_info = ttk.Label(control_card, text="", style="Status.TLabel")
-        self.study_info.grid(row=3, column=0, sticky="w", padx=4, pady=(8, 8))
-
-        button_box = ttk.Frame(control_card, style="Surface.TFrame")
-        button_box.grid(row=4, column=0, sticky="ew")
-        button_box.columnconfigure(0, weight=1)
-
-        ttk.Button(button_box, text="Siradaki Soru", command=self.show_next_question, style="Primary.TButton").grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        ttk.Button(button_box, text="Rastgele Soru", command=self.pick_random_question, style="Secondary.TButton").grid(row=1, column=0, sticky="ew")
-
-        self.result_label = ttk.Label(control_card, text="", style="Status.TLabel")
-        self.result_label.grid(row=5, column=0, sticky="w", padx=4, pady=(12, 6))
-
-        ttk.Button(control_card, text="Cevabi Kontrol Et", command=self.check_answer, style="Primary.TButton").grid(
-            row=6, column=0, sticky="ew", pady=(0, 8)
-        )
-        ttk.Button(control_card, text="Cevabi Goster", command=self.reveal_answer, style="Secondary.TButton").grid(
-            row=7, column=0, sticky="ew"
-        )
-
-        note_card = tk.Frame(right, bg=COLORS["surface"], highlightthickness=0)
-        note_card.grid(row=1, column=0, sticky="nsew", pady=(16, 0))
-        note_card.columnconfigure(0, weight=1)
-        note_card.rowconfigure(1, weight=1)
-
-        ttk.Label(note_card, text="Aciklama", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", padx=4, pady=(0, 6))
-        self.explanation_label = ttk.Label(
-            note_card,
-            text="Cevabi kontrol edin ya da Cevabi Goster ile aciklamayi gorun.",
-            background=COLORS["surface"],
-            foreground=COLORS["muted"],
-            wraplength=280,
-            justify="left",
+        self.session_explanation_label = tk.Label(
+            content,
+            text="",
+            bg=COLORS["surface"],
+            fg=COLORS["muted"],
             font=("Segoe UI", 10),
+            wraplength=760,
+            justify="left",
         )
-        self.explanation_label.grid(row=1, column=0, sticky="nw", padx=4, pady=(0, 8))
+        self.session_explanation_label.grid(row=4, column=0, sticky="w", padx=4, pady=(0, 10))
+
+        nav = tk.Frame(content, bg=COLORS["surface"])
+        nav.grid(row=5, column=0, sticky="ew", padx=4, pady=(6, 16))
+        nav.columnconfigure(1, weight=1)
+
+        self.session_prev_button = tk.Button(
+            nav,
+            text="Onceki Soru",
+            command=self._go_prev_question,
+            bd=0,
+            relief="flat",
+            bg=COLORS["surface_alt"],
+            fg=COLORS["text"],
+            activebackground=COLORS["line"],
+            font=("Segoe UI Semibold", 10),
+            padx=16,
+            pady=8,
+        )
+        self.session_prev_button.grid(row=0, column=0, sticky="w")
+
+        self.session_next_button = tk.Button(
+            nav,
+            text="Sonraki Soru",
+            command=self._go_next_question,
+            bd=0,
+            relief="flat",
+            bg=COLORS["accent"],
+            fg="#ffffff",
+            activebackground=COLORS["accent_dark"],
+            activeforeground="#ffffff",
+            font=("Segoe UI Semibold", 10),
+            padx=16,
+            pady=8,
+        )
+        self.session_next_button.grid(row=0, column=2, sticky="e")
+
+    def _reset_session(self) -> None:
+        if not self.questions:
+            return
+
+        self._select_session_questions()
+        if not self.session_questions:
+            messagebox.showwarning("Bilgi", "Soru havuzu bos. Once soru ekleyin.")
+            return
+
+        self.session_answers = [None] * len(self.session_questions)
+        self.session_correct = [None] * len(self.session_questions)
+        self.session_index = 0
+        self.session_correct_count = 0
+        self.session_wrong_count = 0
+        self.session_completed = False
+
+        self._start_session_timer()
+        self._render_session_question()
+
+    def _select_session_questions(self) -> None:
+        total = len(self.questions)
+        if total == 0:
+            self.session_questions = []
+            return
+
+        target = min(self.session_size, total)
+        pool = list(self.questions)
+        if self.last_session_keys:
+            fresh = [item for item in pool if self._question_key(item) not in self.last_session_keys]
+            if len(fresh) >= target:
+                pool = fresh
+            else:
+                used = [item for item in pool if self._question_key(item) in self.last_session_keys]
+                pool = fresh + used
+
+        random.shuffle(pool)
+        self.session_questions = pool[:target]
+        self.last_session_keys = {self._question_key(question) for question in self.session_questions}
+
+    def _start_session_timer(self) -> None:
+        if self.session_timer_job is not None:
+            self.root.after_cancel(self.session_timer_job)
+            self.session_timer_job = None
+
+        self.session_start_time = time.monotonic()
+        self._tick_session_timer()
+
+    def _tick_session_timer(self) -> None:
+        if self.session_start_time is None or self.session_timer_label is None or self.session_window is None:
+            return
+
+        elapsed = int(time.monotonic() - self.session_start_time)
+        minutes = elapsed // 60
+        seconds = elapsed % 60
+        self.session_timer_label.config(text=f"Sure: {minutes}:{seconds:02d}")
+        self.session_timer_job = self.root.after(1000, self._tick_session_timer)
+
+    def _render_session_question(self) -> None:
+        if not self.session_questions or self.session_question_text is None:
+            return
+
+        question = self.session_questions[self.session_index]
+        self._update_session_header()
+
+        self.session_question_text.config(state="normal")
+        self.session_question_text.delete("1.0", tk.END)
+        self.session_question_text.insert("1.0", question.text)
+        self.session_question_text.config(state="disabled")
+
+        for index, button in enumerate(self.session_option_buttons):
+            option_text = question.options[index] if index < len(question.options) else "-"
+            button.config(
+                text=f"{OPTION_LABELS[index]}) {option_text}",
+                state="normal",
+                bg=COLORS["option_bg"],
+                fg=COLORS["text"],
+            )
+
+        selected = self.session_answers[self.session_index]
+        if selected is None:
+            self.session_result_label.config(text="Cevabini sec.", fg=COLORS["muted"])
+            self._set_session_explanation("")
+        else:
+            self._apply_answer_colors(selected, question.correct_option, question)
+
+        self._update_session_nav()
+
+    def _apply_answer_colors(self, selected: int, correct_index: int, question: Question) -> None:
+        for index, button in enumerate(self.session_option_buttons):
+            if index == correct_index:
+                button.config(bg=COLORS["success_bg"], fg=COLORS["success_fg"])
+            elif index == selected:
+                button.config(bg=COLORS["danger_bg"], fg=COLORS["danger_fg"])
+            else:
+                button.config(bg=COLORS["option_bg"], fg=COLORS["text"])
+            button.config(state="disabled")
+
+        if selected == correct_index:
+            self.session_result_label.config(text="Dogru cevap.", fg=COLORS["success_fg"])
+        else:
+            self.session_result_label.config(text="Yanlis cevap.", fg=COLORS["danger_fg"])
+
+        explanation = question.explanation.strip() if question.explanation else ""
+        if not explanation:
+            explanation = "Bu soru icin aciklama eklenmemis."
+        self._set_session_explanation(explanation)
+
+    def _set_session_explanation(self, text: str) -> None:
+        if self.session_explanation_label is None:
+            return
+        self.session_explanation_label.config(text=text, fg=COLORS["muted"] if not text or "eklenmemis" in text else COLORS["text"])
+
+    def _update_session_header(self) -> None:
+        total = len(self.session_questions)
+        current = self.session_index + 1
+        if self.session_progress_label is not None:
+            self.session_progress_label.config(text=f"Soru {current}/{total}")
+        if self.session_counts_label is not None:
+            self.session_counts_label.config(text=f"Dogru: {self.session_correct_count}  Yanlis: {self.session_wrong_count}")
+
+    def _update_session_nav(self) -> None:
+        if self.session_prev_button is not None:
+            prev_state = "normal" if self.session_index > 0 else "disabled"
+            self.session_prev_button.config(state=prev_state)
+
+        if self.session_next_button is None:
+            return
+
+        answered = self.session_answers[self.session_index] is not None
+        is_last = self.session_index == len(self.session_questions) - 1
+        if self.session_completed and is_last:
+            self.session_next_button.config(text="Test Tamamlandi", state="disabled")
+            return
+
+        if answered:
+            self.session_next_button.config(
+                text="Testi Bitir" if is_last else "Sonraki Soru",
+                state="normal",
+            )
+        else:
+            self.session_next_button.config(text="Sonraki Soru", state="disabled")
+
+    def _on_option_selected(self, index: int) -> None:
+        if not self.session_questions:
+            return
+
+        if self.session_answers[self.session_index] is not None:
+            return
+
+        question = self.session_questions[self.session_index]
+        self.session_answers[self.session_index] = index
+        is_correct = index == question.correct_option
+        self.session_correct[self.session_index] = is_correct
+
+        if is_correct:
+            self.session_correct_count += 1
+        else:
+            self.session_wrong_count += 1
+
+        self._apply_answer_colors(index, question.correct_option, question)
+        self._mark_question_completed(question)
+        self._update_session_header()
+        self._update_session_nav()
+
+    def _go_next_question(self) -> None:
+        if not self.session_questions:
+            return
+
+        if self.session_answers[self.session_index] is None:
+            messagebox.showwarning("Uyari", "Once bu soruyu cevaplamalisiniz.")
+            return
+
+        if self.session_index == len(self.session_questions) - 1:
+            if not self.session_completed:
+                self.session_completed = True
+                if self.session_timer_job is not None:
+                    self.root.after_cancel(self.session_timer_job)
+                    self.session_timer_job = None
+                self._update_session_nav()
+                self._show_score_window()
+            return
+
+        self.session_index += 1
+        self._render_session_question()
+
+    def _go_prev_question(self) -> None:
+        if not self.session_questions or self.session_index == 0:
+            return
+        self.session_index -= 1
+        self._render_session_question()
+
+    def _show_score_window(self) -> None:
+        total = len(self.session_questions)
+        if total == 0:
+            return
+
+        score = round((self.session_correct_count / total) * 100)
+        score_window = tk.Toplevel(self.root)
+        score_window.title("Puanlama")
+        score_window.geometry("760x620")
+        score_window.minsize(680, 520)
+        score_window.configure(bg=COLORS["bg"])
+
+        score_window.columnconfigure(0, weight=1)
+        score_window.rowconfigure(2, weight=1)
+
+        header = tk.Frame(score_window, bg=COLORS["bg"])
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(16, 8))
+        header.columnconfigure(1, weight=1)
+
+        tk.Label(
+            header,
+            text="Test Sonucu",
+            bg=COLORS["bg"],
+            fg=COLORS["text"],
+            font=("Bahnschrift", 16, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+
+        tk.Label(
+            header,
+            text=f"Puan: {score}/100",
+            bg=COLORS["bg"],
+            fg=COLORS["accent_dark"],
+            font=("Segoe UI Semibold", 12),
+        ).grid(row=0, column=1, sticky="e")
+
+        tk.Label(
+            score_window,
+            text=f"Dogru: {self.session_correct_count}  Yanlis: {self.session_wrong_count}",
+            bg=COLORS["bg"],
+            fg=COLORS["muted"],
+            font=("Segoe UI", 10),
+        ).grid(row=1, column=0, sticky="w", padx=20, pady=(0, 8))
+
+        body = tk.Frame(score_window, bg=COLORS["surface"])
+        body.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 16))
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
+
+        text = tk.Text(
+            body,
+            wrap="word",
+            state="normal",
+            font=("Segoe UI", 10),
+            bg=COLORS["surface"],
+            fg=COLORS["text"],
+            relief="flat",
+            bd=0,
+            padx=8,
+            pady=8,
+        )
+        text.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = ttk.Scrollbar(body, orient="vertical", command=text.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        text.configure(yscrollcommand=scrollbar.set)
+
+        wrong_items = []
+        for idx, question in enumerate(self.session_questions, start=1):
+            selected = self.session_answers[idx - 1]
+            if selected is None or selected == question.correct_option:
+                continue
+            wrong_items.append((idx, question, selected))
+
+        if not wrong_items:
+            text.insert("1.0", "Tum sorular dogru cevaplandi. Tebrikler!")
+        else:
+            for order, question, selected in wrong_items:
+                selected_label = OPTION_LABELS[selected] if selected is not None else "-"
+                correct_label = OPTION_LABELS[question.correct_option]
+                correct_text = question.options[question.correct_option] if question.correct_option < len(question.options) else ""
+                text.insert(tk.END, f"{order}) {question.text}\n")
+                text.insert(tk.END, f"   Senin cevabin: {selected_label}\n")
+                text.insert(tk.END, f"   Dogru cevap: {correct_label}) {correct_text}\n\n")
+
+        text.config(state="disabled")
+
+        close_btn = tk.Button(
+            score_window,
+            text="Kapat",
+            command=score_window.destroy,
+            bd=0,
+            relief="flat",
+            bg=COLORS["accent"],
+            fg="#ffffff",
+            activebackground=COLORS["accent_dark"],
+            activeforeground="#ffffff",
+            font=("Segoe UI Semibold", 10),
+            padx=16,
+            pady=8,
+        )
+        close_btn.grid(row=3, column=0, sticky="e", padx=20, pady=(0, 16))
+
+    def _close_session_window(self) -> None:
+        if self.session_timer_job is not None:
+            self.root.after_cancel(self.session_timer_job)
+            self.session_timer_job = None
+        self.session_start_time = None
+        if self.session_window is not None:
+            self.session_window.destroy()
+        self.session_window = None
 
     def _build_add_tab(self) -> None:
         self.add_tab.columnconfigure(0, weight=1)
@@ -562,157 +890,22 @@ class QuestionBankApp:
         self.list_info_label.config(text=f"Toplam {total} soru")
         self._sync_solved_questions()
         self._update_progress_labels()
-        if self.study_ready:
-            self._update_study_labels()
-
-    def prepare_study_queue(self) -> None:
-        self.current_question = None
-        self.filtered_questions = list(self.questions)
-        random.shuffle(self.filtered_questions)
-        self._update_study_labels()
-        self.show_next_question()
 
     def _update_progress_labels(self) -> None:
         total = len(self.questions)
         solved = len(self.solved_questions)
         progress_text = f"{solved}/{total}"
-
-        if self.question_counter_label is not None:
-            self.question_counter_label.config(text=progress_text)
         if self.home_progress_label is not None:
             self.home_progress_label.config(text=progress_text)
         if self.home_total_label is not None:
             self.home_total_label.config(text=f"Toplam Soru: {total}")
 
-    def _update_study_labels(self) -> None:
-        total = len(self.questions)
-        solved = len(self.solved_questions)
-        remaining = max(total - solved, 0)
-        if self.study_info is not None:
-            self.study_info.config(text=f"Kalan: {remaining} soru")
-        self._update_progress_labels()
-
-    def show_next_question(self) -> None:
-        if not self.filtered_questions:
-            self.current_question = None
-            self._update_study_labels()
-            self._render_question(None)
-            return
-
-        self.current_question = self.filtered_questions.pop(0)
-        self._update_study_labels()
-        self._render_question(self.current_question)
-
-    def pick_random_question(self) -> None:
-        if not self.questions:
-            self.current_question = None
-            self._update_study_labels()
-            self._render_question(None)
-            return
-
-        pool = self.questions
-        if not pool:
-            self.current_question = None
-            self._update_study_labels()
-            self._render_question(None)
-            return
-
-        self.current_question = random.choice(pool)
-        self._update_study_labels()
-        self._render_question(self.current_question)
-
-    def _render_question(self, question: Question | None) -> None:
-        self.current_answer.set(-1)
-        self.result_label.config(text="", foreground=COLORS["muted"])
-        self.explanation_label.config(text="Cevabi kontrol edin ya da Cevabi Goster ile aciklamayi gorun.")
-
-        self.question_text.config(state="normal")
-        self.question_text.delete("1.0", tk.END)
-
-        if question is None:
-            self.question_text.insert("1.0", "Bu oturum icin soru yok. Yeni soru ekleyebilir ya da soru listesini kontrol edebilirsiniz.")
-            self.question_text.config(state="disabled")
-            for index, button in enumerate(self.option_buttons):
-                button.config(text=f"{OPTION_LABELS[index]}) -", state="disabled", bg=COLORS["neutral_bg"], fg=COLORS["muted"])
-            return
-
-        self.question_text.insert("1.0", question.text)
-        self.question_text.config(state="disabled")
-
-        for index, button in enumerate(self.option_buttons):
-            option_text = question.options[index] if index < len(question.options) else "-"
-            button.config(
-                text=f"{OPTION_LABELS[index]}) {option_text}",
-                state="normal",
-                bg=COLORS["neutral_bg"],
-                fg=COLORS["text"],
-            )
-
-    def check_answer(self) -> None:
-        if self.current_question is None:
-            messagebox.showinfo("Bilgi", "Kontrol edilecek soru yok.")
-            return
-
-        selected = self.current_answer.get()
-        if selected < 0:
-            messagebox.showwarning("Uyari", "Lutfen bir cevap secin.")
-            return
-
-        correct_index = self.current_question.correct_option
-        correct_label = OPTION_LABELS[correct_index]
-
-        for index, button in enumerate(self.option_buttons):
-            if index == correct_index:
-                button.config(bg=COLORS["success_bg"], fg=COLORS["success_fg"])
-            elif index == selected:
-                button.config(bg=COLORS["danger_bg"], fg=COLORS["danger_fg"])
-            else:
-                button.config(bg=COLORS["neutral_bg"], fg=COLORS["text"])
-
-        if selected == correct_index:
-            self.result_label.config(text=f"Dogru cevap: {correct_label}", foreground=COLORS["success_fg"])
-        else:
-            self.result_label.config(text=f"Yanlis. Dogru cevap: {correct_label}", foreground=COLORS["danger_fg"])
-
-        if self.current_question.explanation:
-            self.explanation_label.config(text=self.current_question.explanation, foreground=COLORS["text"])
-        else:
-            self.explanation_label.config(text="Bu soru icin aciklama eklenmemis.", foreground=COLORS["muted"])
-        self._mark_question_completed()
-
-    def reveal_answer(self) -> None:
-        if self.current_question is None:
-            messagebox.showinfo("Bilgi", "Gosterilecek soru yok.")
-            return
-
-        correct_index = self.current_question.correct_option
-        correct_label = OPTION_LABELS[correct_index]
-
-        for index, button in enumerate(self.option_buttons):
-            if index == correct_index:
-                button.config(bg=COLORS["success_bg"], fg=COLORS["success_fg"])
-            else:
-                button.config(bg=COLORS["neutral_bg"], fg=COLORS["text"])
-
-        self.result_label.config(text=f"Dogru cevap: {correct_label}", foreground=COLORS["success_fg"])
-
-        if self.current_question.explanation:
-            self.explanation_label.config(text=self.current_question.explanation, foreground=COLORS["text"])
-        else:
-            self.explanation_label.config(text="Bu soru icin aciklama eklenmemis.", foreground=COLORS["muted"])
-
-        self._mark_question_completed()
-
-    def _mark_question_completed(self) -> None:
-        if self.current_question is None:
-            return
-
-        question_key = self._question_key(self.current_question)
+    def _mark_question_completed(self, question: Question) -> None:
+        question_key = self._question_key(question)
         if question_key in self.solved_questions:
             return
-
         self.solved_questions.add(question_key)
-        self._update_study_labels()
+        self._update_progress_labels()
 
     def save_question(self) -> None:
         question_text = self.question_entry.get("1.0", tk.END).strip()
@@ -740,8 +933,6 @@ class QuestionBankApp:
         self.list_status_label.config(text="")
         self.clear_form(clear_status=False)
         self.refresh_question_list()
-        if self.study_ready:
-            self.prepare_study_queue()
 
     def delete_selected_question(self) -> None:
         selection = self.question_tree.selection()
@@ -771,8 +962,6 @@ class QuestionBankApp:
         self.list_status_label.config(text="Secili soru silindi.", foreground=COLORS["danger_fg"])
         self.add_status.config(text="")
         self.refresh_question_list()
-        if self.study_ready:
-            self.prepare_study_queue()
 
     def clear_form(self, clear_status: bool = True) -> None:
         self.question_entry.delete("1.0", tk.END)
