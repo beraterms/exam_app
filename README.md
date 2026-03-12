@@ -1,15 +1,6 @@
 # Soru Bankasi
 
-Python ile gelistirilmis basit bir masaustu soru bankasi uygulamasi.
-
-## Ozellikler
-
-- Duz ve sade bir arayuz.
-- Sorular odakta calisma ekrani.
-- `Soru Ekle` ile yeni soru kaydi.
-- `Soru Listesi` ile goruntuleme ve silme.
-- Sorular `data/questions.json` icinde saklanir.
-- Kategori adlari otomatik duzeltilir ve sade bir ana kategoriye indirgenir.
+Soru bankasi, sinavlara hazirlik icin soru cozmeyi kolaylastirmak amaciyla gelistirilmis basit bir masaustu uygulamasidir.
 
 ## Gereksinimler
 
