@@ -1,13 +1,33 @@
 # Soru Bankasi
 
-Bu proje, sinava calismak icin hazirlanmis basit bir Python masaustu uygulamasidir.
+Python ile gelistirilmis basit bir masaustu soru bankasi uygulamasi.
 
 ## Ozellikler
 
-- Sorular ile uygulama kodlarini ayri klasorlerde tutar.
-- `Soru Ekle` ekrani ile yeni soru kaydedebilir.
-- `Calis` ekraninda ders filtresi ile soru cozer.
+- Duz ve sade bir arayuz.
+- Sorular odakta calisma ekrani.
+- `Soru Ekle` ile yeni soru kaydi.
+- `Soru Listesi` ile goruntuleme ve silme.
 - Sorular `data/questions.json` icinde saklanir.
+- Kategori adlari otomatik duzeltilir ve sade bir ana kategoriye indirgenir.
+
+## Gereksinimler
+
+- Python 3.11+ (onerilen)
+- Windows + PowerShell
+
+## Kurulum
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -U pip
+```
+
+## Calistirma
+
+```powershell
+.\.venv\Scripts\python.exe .\app.py
+```
 
 ## Klasor Yapisi
 
@@ -15,10 +35,6 @@ Bu proje, sinava calismak icin hazirlanmis basit bir Python masaustu uygulamasid
 - `src/question_bank/`: Uygulama kodlari
 - `data/questions.json`: Sorularin saklandigi veri dosyasi
 
-## Calistirma
+## Lisans
 
-PowerShell:
-
-```powershell
-.\.venv\Scripts\python.exe .\app.py
-```
+Bu proje MIT lisansi ile lisanslanmistir. Ayrinti icin `LICENSE` dosyasina bakin.
