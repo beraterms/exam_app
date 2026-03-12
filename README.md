@@ -22,8 +22,8 @@ NOT: Dilerseniz bu işlemi virtual enviroment oluşturarak yapın.
 
 ## Bat ile Calistirma (Tek Tik)
 
-Windows'ta uygulamayi tek tikla acmak icin SoruBankasi.bat dosyasina cift tiklayin.
-Bu yontem proje klasorunden calisir ve varsa .venv icindeki Python'u kullanir.
+Windows'ta uygulamayi tek tikla acmak icin `SoruBankasi.bat` dosyasina cift tiklayin.
+Bu yontem proje klasorunden calisir ve varsa `.venv` icindeki Python'u kullanir.
 Python kurulu degilse calismaz.
 
 ## IDE ile çalıştırma
