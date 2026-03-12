@@ -116,8 +116,14 @@ def _build_subject(lesson: str | int, topic: str) -> str:
 
 
 def _fix_latex_escapes(line: str) -> str:
-    """Fix unescaped LaTeX backslashes in JSON strings (e.g. \\phi -> \\\\phi)."""
-    return re.sub(r'\\(?!["\\\/bfnrtu])', r'\\\\', line)
+    """Fix unescaped LaTeX backslashes in JSON strings (e.g. \\phi -> \\\\phi).
+
+    Only \\", \\\\, \\/, \\n and \\uXXXX are kept as valid JSON escapes.
+    \\t, \\b, \\f, \\r are also fixed because they clash with LaTeX commands
+    (\\times, \\beta, \\frac, \\rho, etc.) and are never intentional control
+    characters in exam question text.
+    """
+    return re.sub(r'\\(?!["\\\/nu])', r'\\\\', line)
 
 
 def load_ndjson(path: Path) -> list[dict]:
