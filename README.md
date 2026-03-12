@@ -8,12 +8,14 @@ Soru bankasi, sinavlara hazirlik icin soru cozmeyi kolaylastirmak amaciyla gelis
 - Windows + PowerShell
 
 ## Kurulum
+Anaconda powershell prompt'u başlat.
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -U pip
+cd /uygulamanın_bulunduğu_dizin
+python app.py
 ```
-Ya da direkt VS Code gibi bir IDE ile çalıştırma
+NOT: Dilerseniz bu işlemi virtual enviroment oluşturarak yapın.
+Ya da direkt VS Code gibi bir IDE ile çalıştırma:
 ```powershell
 python app.py
 ```
