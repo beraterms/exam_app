@@ -16,7 +16,7 @@ cd /uygulamanın_bulunduğu_dizin
 ## Calistirma
 
 ```powershell
-.\.venv\Scripts\python.exe .\app.py
+python app.py
 ```
 NOT: Dilerseniz bu işlemi virtual enviroment oluşturarak yapın.
 
