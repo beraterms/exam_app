@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -12,6 +13,7 @@ from .storage import QuestionRepository
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_FILE = ROOT_DIR / "data" / "questions.json"
 OPTION_LABELS = ("A", "B", "C", "D")
+COURSE_NAME = "Siber Guvenlige Giris"
 COLORS = {
     "bg": "#f4f5f7",
     "surface": "#ffffff",
@@ -35,7 +37,7 @@ COLORS = {
 class QuestionBankApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("Soru Bankasi")
+        self.root.title(f"{COURSE_NAME} - Soru Bankasi")
         self.root.geometry("1180x780")
         self.root.minsize(980, 700)
         self.root.configure(bg=COLORS["bg"])
@@ -46,14 +48,22 @@ class QuestionBankApp:
         self.tree_question_map: dict[str, Question] = {}
         self.current_question: Question | None = None
         self.current_answer = tk.IntVar(value=-1)
-        self.study_subject = tk.StringVar(value="Tum Dersler")
         self.add_correct_answer = tk.StringVar(value="A")
+        self.solved_questions: set[tuple] = set()
+        self.study_start_time: float | None = None
+        self.study_timer_job: str | None = None
+        self.notebook: ttk.Notebook | None = None
+        self.study_tab: ttk.Frame | None = None
+        self.study_ready = False
+        self.question_counter_label: ttk.Label | None = None
+        self.study_info: ttk.Label | None = None
+        self.timer_label: ttk.Label | None = None
+        self.home_progress_label: ttk.Label | None = None
+        self.home_total_label: ttk.Label | None = None
 
         self._configure_styles()
         self._build_ui()
         self.refresh_question_list()
-        self.refresh_subject_filter()
-        self.prepare_study_queue()
 
     def _configure_styles(self) -> None:
         style = ttk.Style()
@@ -175,27 +185,115 @@ class QuestionBankApp:
         header.grid(row=0, column=0, sticky="ew", padx=20, pady=(16, 8))
         header.columnconfigure(0, weight=1)
 
-        ttk.Label(header, text="Soru Bankasi", style="HeroTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(header, text=f"{COURSE_NAME} Soru Bankasi", style="HeroTitle.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(
             header,
-            text="Calisma ekrani odakta. Sorular buyuk alanda, yonetim araclari yaninda.",
+            text=f"{COURSE_NAME} dersi icin hazirlanan soru havuzu.",
             style="HeroBody.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-        notebook = ttk.Notebook(self.root, style="App.TNotebook")
-        notebook.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.notebook = ttk.Notebook(self.root, style="App.TNotebook")
+        self.notebook.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
 
-        self.study_tab = ttk.Frame(notebook, padding=18, style="Surface.TFrame")
-        self.add_tab = ttk.Frame(notebook, padding=18, style="Surface.TFrame")
-        self.list_tab = ttk.Frame(notebook, padding=18, style="Surface.TFrame")
+        self.home_tab = ttk.Frame(self.notebook, padding=18, style="Surface.TFrame")
+        self.add_tab = ttk.Frame(self.notebook, padding=18, style="Surface.TFrame")
+        self.list_tab = ttk.Frame(self.notebook, padding=18, style="Surface.TFrame")
 
-        notebook.add(self.study_tab, text="Calis")
-        notebook.add(self.add_tab, text="Soru Ekle")
-        notebook.add(self.list_tab, text="Soru Listesi")
+        self.notebook.add(self.home_tab, text="Ana Sayfa")
+        self.notebook.add(self.add_tab, text="Soru Ekle")
+        self.notebook.add(self.list_tab, text="Soru Listesi")
 
-        self._build_study_tab()
+        self._build_home_tab()
         self._build_add_tab()
         self._build_list_tab()
+
+    def _build_home_tab(self) -> None:
+        self.home_tab.columnconfigure(0, weight=3)
+        self.home_tab.columnconfigure(1, weight=2, minsize=260)
+        self.home_tab.rowconfigure(0, weight=1)
+
+        hero = tk.Frame(self.home_tab, bg=COLORS["card"], highlightthickness=1, highlightbackground=COLORS["line"])
+        hero.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
+        hero.columnconfigure(0, weight=1)
+
+        ttk.Label(hero, text="Cozum Oturumuna Hazirlan", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", padx=24, pady=(20, 6))
+        ttk.Label(
+            hero,
+            text="Oturumu baslat, sureyi takip et, aciklamalarla pekistir.",
+            style="CardBody.TLabel",
+            wraplength=560,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", padx=24, pady=(0, 18))
+
+        stats = tk.Frame(hero, bg=COLORS["card"])
+        stats.grid(row=2, column=0, sticky="ew", padx=24)
+        stats.columnconfigure(1, weight=1)
+
+        ttk.Label(stats, text="Cozulen", style="Field.TLabel").grid(row=0, column=0, sticky="w")
+        self.home_progress_label = ttk.Label(stats, text="", style="Metric.TLabel")
+        self.home_progress_label.grid(row=0, column=1, sticky="e")
+        self.home_total_label = ttk.Label(stats, text="", style="CardBody.TLabel")
+        self.home_total_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        ttk.Button(hero, text="Cozmeye Basla", command=self.start_study_session, style="Primary.TButton").grid(
+            row=3, column=0, sticky="w", padx=24, pady=(20, 24)
+        )
+
+        side = tk.Frame(self.home_tab, bg=COLORS["surface"], highlightthickness=1, highlightbackground=COLORS["line"])
+        side.grid(row=0, column=1, sticky="nsew")
+        side.columnconfigure(0, weight=1)
+
+        ttk.Label(side, text="Oturum Ozeti", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", padx=18, pady=(18, 6))
+        ttk.Label(
+            side,
+            text="Cozum oturumunu istedigin zaman baslatabilir ve durdurabilirsin.",
+            style="CardBody.TLabel",
+            wraplength=240,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", padx=18, pady=(0, 10))
+        ttk.Label(
+            side,
+            text="Dogru veya yanlis fark etmeksizin aciklamayi gorebilirsin.",
+            style="CardBody.TLabel",
+            wraplength=240,
+            justify="left",
+        ).grid(row=2, column=0, sticky="w", padx=18, pady=(0, 18))
+
+    def _ensure_study_tab(self) -> None:
+        if self.study_tab is not None or self.notebook is None:
+            return
+
+        self.study_tab = ttk.Frame(self.notebook, padding=18, style="Surface.TFrame")
+        self.notebook.insert(1, self.study_tab, text="Cozum Oturumu")
+        self._build_study_tab()
+        self.study_ready = True
+
+    def start_study_session(self) -> None:
+        self._ensure_study_tab()
+        if self.study_tab is None or self.notebook is None:
+            return
+
+        self.prepare_study_queue()
+        self._start_study_timer()
+        self.notebook.select(self.study_tab)
+
+    def _start_study_timer(self) -> None:
+        if self.study_timer_job is not None:
+            self.root.after_cancel(self.study_timer_job)
+            self.study_timer_job = None
+
+        self.study_start_time = time.monotonic()
+        self._tick_study_timer()
+
+    def _tick_study_timer(self) -> None:
+        if self.study_start_time is None or self.timer_label is None:
+            return
+
+        elapsed = int(time.monotonic() - self.study_start_time)
+        minutes = elapsed // 60
+        seconds = elapsed % 60
+        self.timer_label.config(text=f"Gecen sure: {minutes} dk {seconds:02d} sn")
+        self.study_timer_job = self.root.after(1000, self._tick_study_timer)
 
     def _build_study_tab(self) -> None:
         self.study_tab.columnconfigure(0, weight=4)
@@ -214,9 +312,6 @@ class QuestionBankApp:
         ttk.Label(question_head, text="Soru", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
         self.question_counter_label = ttk.Label(question_head, text="", style="Metric.TLabel")
         self.question_counter_label.grid(row=0, column=1, sticky="e")
-        self.question_subject_label = ttk.Label(question_head, text="", style="CardBody.TLabel")
-        self.question_subject_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
-
         body = tk.Frame(left, bg=COLORS["card"])
         body.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 18))
         body.columnconfigure(0, weight=1)
@@ -277,27 +372,16 @@ class QuestionBankApp:
         control_card.grid(row=0, column=0, sticky="ew")
         control_card.columnconfigure(0, weight=1)
 
-        ttk.Label(control_card, text="Calisma Kontrolu", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", padx=4, pady=(0, 4))
-        ttk.Label(control_card, text="Sorulari filtrele ve akisi yonet.", style="CardBody.TLabel").grid(
+        ttk.Label(control_card, text="Oturum Kontrolu", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", padx=4, pady=(0, 4))
+        ttk.Label(control_card, text="Soru akisini yonet ve sureyi takip et.", style="CardBody.TLabel").grid(
             row=1, column=0, sticky="w", padx=4, pady=(0, 12)
         )
 
-        filter_box = ttk.Frame(control_card, style="Surface.TFrame")
-        filter_box.grid(row=2, column=0, sticky="ew")
-        filter_box.columnconfigure(0, weight=1)
-
-        ttk.Label(filter_box, text="Ders", style="Field.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
-        self.subject_combo = ttk.Combobox(
-            filter_box,
-            textvariable=self.study_subject,
-            state="readonly",
-            style="App.TCombobox",
-        )
-        self.subject_combo.grid(row=1, column=0, sticky="ew")
-        self.subject_combo.bind("<<ComboboxSelected>>", lambda _event: self.prepare_study_queue())
+        self.timer_label = ttk.Label(control_card, text="Gecen sure: 0 dk 00 sn", style="Metric.TLabel")
+        self.timer_label.grid(row=2, column=0, sticky="w", padx=4)
 
         self.study_info = ttk.Label(control_card, text="", style="Status.TLabel")
-        self.study_info.grid(row=3, column=0, sticky="w", padx=4, pady=(12, 8))
+        self.study_info.grid(row=3, column=0, sticky="w", padx=4, pady=(8, 8))
 
         button_box = ttk.Frame(control_card, style="Surface.TFrame")
         button_box.grid(row=4, column=0, sticky="ew")
@@ -312,6 +396,9 @@ class QuestionBankApp:
         ttk.Button(control_card, text="Cevabi Kontrol Et", command=self.check_answer, style="Primary.TButton").grid(
             row=6, column=0, sticky="ew", pady=(0, 8)
         )
+        ttk.Button(control_card, text="Cevabi Goster", command=self.reveal_answer, style="Secondary.TButton").grid(
+            row=7, column=0, sticky="ew"
+        )
 
         note_card = tk.Frame(right, bg=COLORS["surface"], highlightthickness=0)
         note_card.grid(row=1, column=0, sticky="nsew", pady=(16, 0))
@@ -321,7 +408,7 @@ class QuestionBankApp:
         ttk.Label(note_card, text="Aciklama", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", padx=4, pady=(0, 6))
         self.explanation_label = ttk.Label(
             note_card,
-            text="Cevabi kontrol ettikten sonra aciklama burada gorunecek.",
+            text="Cevabi kontrol edin ya da Cevabi Goster ile aciklamayi gorun.",
             background=COLORS["surface"],
             foreground=COLORS["muted"],
             wraplength=280,
@@ -346,22 +433,18 @@ class QuestionBankApp:
         form.grid(row=2, column=0, sticky="nsew", padx=2, pady=(0, 16))
         form.columnconfigure(1, weight=1)
 
-        ttk.Label(form, text="Ders", style="Field.TLabel").grid(row=0, column=0, sticky="w", pady=8, padx=(0, 16))
-        self.subject_entry = ttk.Entry(form, style="App.TEntry")
-        self.subject_entry.grid(row=0, column=1, sticky="ew", pady=8)
-
-        ttk.Label(form, text="Soru", style="Field.TLabel").grid(row=1, column=0, sticky="nw", pady=8, padx=(0, 16))
+        ttk.Label(form, text="Soru", style="Field.TLabel").grid(row=0, column=0, sticky="nw", pady=8, padx=(0, 16))
         self.question_entry = self._build_textbox(form, height=8)
-        self.question_entry.grid(row=1, column=1, sticky="ew", pady=8)
+        self.question_entry.grid(row=0, column=1, sticky="ew", pady=8)
 
         self.option_entries = []
-        for index, label in enumerate(OPTION_LABELS, start=2):
+        for index, label in enumerate(OPTION_LABELS, start=1):
             ttk.Label(form, text=f"Secenek {label}", style="Field.TLabel").grid(row=index, column=0, sticky="w", pady=8, padx=(0, 16))
             entry = ttk.Entry(form, style="App.TEntry")
             entry.grid(row=index, column=1, sticky="ew", pady=8)
             self.option_entries.append(entry)
 
-        ttk.Label(form, text="Dogru Cevap", style="Field.TLabel").grid(row=6, column=0, sticky="w", pady=8, padx=(0, 16))
+        ttk.Label(form, text="Dogru Cevap", style="Field.TLabel").grid(row=5, column=0, sticky="w", pady=8, padx=(0, 16))
         answer_combo = ttk.Combobox(
             form,
             textvariable=self.add_correct_answer,
@@ -370,14 +453,14 @@ class QuestionBankApp:
             width=12,
             style="App.TCombobox",
         )
-        answer_combo.grid(row=6, column=1, sticky="w", pady=8)
+        answer_combo.grid(row=5, column=1, sticky="w", pady=8)
 
-        ttk.Label(form, text="Aciklama", style="Field.TLabel").grid(row=7, column=0, sticky="nw", pady=8, padx=(0, 16))
+        ttk.Label(form, text="Aciklama", style="Field.TLabel").grid(row=6, column=0, sticky="nw", pady=8, padx=(0, 16))
         self.explanation_entry = self._build_textbox(form, height=5)
-        self.explanation_entry.grid(row=7, column=1, sticky="ew", pady=8)
+        self.explanation_entry.grid(row=6, column=1, sticky="ew", pady=8)
 
         buttons = ttk.Frame(form, style="Card.TFrame")
-        buttons.grid(row=8, column=1, sticky="w", pady=(16, 0))
+        buttons.grid(row=7, column=1, sticky="w", pady=(16, 0))
         ttk.Button(buttons, text="Soruyu Kaydet", command=self.save_question, style="Primary.TButton").grid(row=0, column=0, padx=(0, 10))
         ttk.Button(buttons, text="Formu Temizle", command=self.clear_form, style="Secondary.TButton").grid(row=0, column=1)
 
@@ -404,15 +487,13 @@ class QuestionBankApp:
         table_shell.columnconfigure(0, weight=1)
         table_shell.rowconfigure(0, weight=1)
 
-        columns = ("subject", "question", "correct")
+        columns = ("question", "correct")
         self.question_tree = ttk.Treeview(table_shell, columns=columns, show="headings", style="App.Treeview")
         self.question_tree.grid(row=0, column=0, sticky="nsew", padx=(0, 0), pady=8)
-        self.question_tree.heading("subject", text="Ders")
         self.question_tree.heading("question", text="Soru")
         self.question_tree.heading("correct", text="Dogru")
-        self.question_tree.column("subject", width=180, anchor="w")
-        self.question_tree.column("question", width=660, anchor="w")
-        self.question_tree.column("correct", width=100, anchor="center")
+        self.question_tree.column("question", width=820, anchor="w")
+        self.question_tree.column("correct", width=110, anchor="center")
         self.question_tree.tag_configure("odd", background=COLORS["card"])
         self.question_tree.tag_configure("even", background=COLORS["table_alt"])
 
@@ -447,6 +528,13 @@ class QuestionBankApp:
             highlightcolor=COLORS["accent"],
         )
 
+    def _question_key(self, question: Question) -> tuple:
+        return (question.text, tuple(question.options), question.correct_option)
+
+    def _sync_solved_questions(self) -> None:
+        current_keys = {self._question_key(question) for question in self.questions}
+        self.solved_questions.intersection_update(current_keys)
+
     def refresh_question_list(self) -> None:
         self.questions = self.repository.load_questions()
         self.tree_question_map.clear()
@@ -463,7 +551,6 @@ class QuestionBankApp:
                 "",
                 "end",
                 values=(
-                    question.subject,
                     question_preview,
                     OPTION_LABELS[question.correct_option] if 0 <= question.correct_option < len(OPTION_LABELS) else "?",
                 ),
@@ -473,35 +560,37 @@ class QuestionBankApp:
 
         total = len(self.questions)
         self.list_info_label.config(text=f"Toplam {total} soru")
-
-    def refresh_subject_filter(self) -> None:
-        subjects = sorted({question.subject for question in self.questions if question.subject})
-        values = ["Tum Dersler", *subjects]
-        self.subject_combo["values"] = values
-        if self.study_subject.get() not in values:
-            self.study_subject.set("Tum Dersler")
+        self._sync_solved_questions()
+        self._update_progress_labels()
+        if self.study_ready:
+            self._update_study_labels()
 
     def prepare_study_queue(self) -> None:
-        subject = self.study_subject.get()
-        if subject == "Tum Dersler":
-            self.filtered_questions = list(self.questions)
-        else:
-            self.filtered_questions = [question for question in self.questions if question.subject == subject]
-
+        self.current_question = None
+        self.filtered_questions = list(self.questions)
         random.shuffle(self.filtered_questions)
         self._update_study_labels()
         self.show_next_question()
 
+    def _update_progress_labels(self) -> None:
+        total = len(self.questions)
+        solved = len(self.solved_questions)
+        progress_text = f"{solved}/{total}"
+
+        if self.question_counter_label is not None:
+            self.question_counter_label.config(text=progress_text)
+        if self.home_progress_label is not None:
+            self.home_progress_label.config(text=progress_text)
+        if self.home_total_label is not None:
+            self.home_total_label.config(text=f"Toplam Soru: {total}")
+
     def _update_study_labels(self) -> None:
         total = len(self.questions)
-        filtered = len(self.filtered_questions)
-        if self.current_question is None:
-            current_text = "Hazir"
-        else:
-            current_text = "Soru acik"
-
-        self.study_info.config(text=f"Filtrede {filtered} soru var")
-        self.question_counter_label.config(text=f"Havuz {total} | Durum: {current_text}")
+        solved = len(self.solved_questions)
+        remaining = max(total - solved, 0)
+        if self.study_info is not None:
+            self.study_info.config(text=f"Kalan: {remaining} soru")
+        self._update_progress_labels()
 
     def show_next_question(self) -> None:
         if not self.filtered_questions:
@@ -521,8 +610,7 @@ class QuestionBankApp:
             self._render_question(None)
             return
 
-        subject = self.study_subject.get()
-        pool = self.questions if subject == "Tum Dersler" else [q for q in self.questions if q.subject == subject]
+        pool = self.questions
         if not pool:
             self.current_question = None
             self._update_study_labels()
@@ -536,20 +624,18 @@ class QuestionBankApp:
     def _render_question(self, question: Question | None) -> None:
         self.current_answer.set(-1)
         self.result_label.config(text="", foreground=COLORS["muted"])
-        self.explanation_label.config(text="Cevabi kontrol ettikten sonra aciklama burada gorunecek.")
+        self.explanation_label.config(text="Cevabi kontrol edin ya da Cevabi Goster ile aciklamayi gorun.")
 
         self.question_text.config(state="normal")
         self.question_text.delete("1.0", tk.END)
 
         if question is None:
-            self.question_subject_label.config(text="Bu filtrede soru yok")
-            self.question_text.insert("1.0", "Soldaki ana alan bos kalmasin diye mesaj gosteriliyor. Ders filtresini degistirebilir veya yeni soru ekleyebilirsiniz.")
+            self.question_text.insert("1.0", "Bu oturum icin soru yok. Yeni soru ekleyebilir ya da soru listesini kontrol edebilirsiniz.")
             self.question_text.config(state="disabled")
             for index, button in enumerate(self.option_buttons):
                 button.config(text=f"{OPTION_LABELS[index]}) -", state="disabled", bg=COLORS["neutral_bg"], fg=COLORS["muted"])
             return
 
-        self.question_subject_label.config(text=f"Ders: {question.subject}")
         self.question_text.insert("1.0", question.text)
         self.question_text.config(state="disabled")
 
@@ -592,17 +678,48 @@ class QuestionBankApp:
             self.explanation_label.config(text=self.current_question.explanation, foreground=COLORS["text"])
         else:
             self.explanation_label.config(text="Bu soru icin aciklama eklenmemis.", foreground=COLORS["muted"])
+        self._mark_question_completed()
+
+    def reveal_answer(self) -> None:
+        if self.current_question is None:
+            messagebox.showinfo("Bilgi", "Gosterilecek soru yok.")
+            return
+
+        correct_index = self.current_question.correct_option
+        correct_label = OPTION_LABELS[correct_index]
+
+        for index, button in enumerate(self.option_buttons):
+            if index == correct_index:
+                button.config(bg=COLORS["success_bg"], fg=COLORS["success_fg"])
+            else:
+                button.config(bg=COLORS["neutral_bg"], fg=COLORS["text"])
+
+        self.result_label.config(text=f"Dogru cevap: {correct_label}", foreground=COLORS["success_fg"])
+
+        if self.current_question.explanation:
+            self.explanation_label.config(text=self.current_question.explanation, foreground=COLORS["text"])
+        else:
+            self.explanation_label.config(text="Bu soru icin aciklama eklenmemis.", foreground=COLORS["muted"])
+
+        self._mark_question_completed()
+
+    def _mark_question_completed(self) -> None:
+        if self.current_question is None:
+            return
+
+        question_key = self._question_key(self.current_question)
+        if question_key in self.solved_questions:
+            return
+
+        self.solved_questions.add(question_key)
+        self._update_study_labels()
 
     def save_question(self) -> None:
-        subject = self.subject_entry.get().strip()
         question_text = self.question_entry.get("1.0", tk.END).strip()
         options = [entry.get().strip() for entry in self.option_entries]
         explanation = self.explanation_entry.get("1.0", tk.END).strip()
         correct_option = OPTION_LABELS.index(self.add_correct_answer.get())
 
-        if not subject:
-            messagebox.showwarning("Eksik Bilgi", "Ders alani bos olamaz.")
-            return
         if not question_text:
             messagebox.showwarning("Eksik Bilgi", "Soru metni bos olamaz.")
             return
@@ -611,7 +728,7 @@ class QuestionBankApp:
             return
 
         question = Question(
-            subject=subject,
+            subject=COURSE_NAME,
             text=question_text,
             options=options,
             correct_option=correct_option,
@@ -623,8 +740,8 @@ class QuestionBankApp:
         self.list_status_label.config(text="")
         self.clear_form(clear_status=False)
         self.refresh_question_list()
-        self.refresh_subject_filter()
-        self.prepare_study_queue()
+        if self.study_ready:
+            self.prepare_study_queue()
 
     def delete_selected_question(self) -> None:
         selection = self.question_tree.selection()
@@ -654,11 +771,10 @@ class QuestionBankApp:
         self.list_status_label.config(text="Secili soru silindi.", foreground=COLORS["danger_fg"])
         self.add_status.config(text="")
         self.refresh_question_list()
-        self.refresh_subject_filter()
-        self.prepare_study_queue()
+        if self.study_ready:
+            self.prepare_study_queue()
 
     def clear_form(self, clear_status: bool = True) -> None:
-        self.subject_entry.delete(0, tk.END)
         self.question_entry.delete("1.0", tk.END)
         self.explanation_entry.delete("1.0", tk.END)
         self.add_correct_answer.set("A")
