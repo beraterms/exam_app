@@ -1,6 +1,6 @@
 # Kriptoloji Soru Bankası
 
-Kriptoloji sınavına hazırlık için soru havuzu uygulaması. Sorular `[[formül]]` sözdizimi ile LaTeX olarak render edilir.
+Kriptoloji sınavına hazırlık için soru havuzu uygulaması.
 
 ## Gereksinimler
 
@@ -24,7 +24,6 @@ py -m src.app
 ## Özellikler
 
 - **Soru Çözme** — Her oturumda 20 rastgele soru, anında doğru/yanlış geri bildirimi
-- **LaTeX Formüller** — `[[formül]]` sözdizimi ile yazılan ifadeler görsel olarak render edilir
 - **Konu & Kaynak Gösterimi** — Her soruda konu adı ve kaynak bilgisi görünür
 - **Çözüm Açıklamaları** — Cevap seçildikten sonra adım adım açıklama gösterilir
 - **RSA Hesaplayıcı** — p, q, e ve mesaj M girilerek şifreleme/çözme adımları hesaplanır
