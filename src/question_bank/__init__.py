@@ -1,1 +1,0 @@
-"""Soru bankasi uygulamasi paketi."""
