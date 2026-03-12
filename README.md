@@ -12,19 +12,22 @@ Anaconda powershell prompt'u başlat.
 
 ```powershell
 cd /uygulamanın_bulunduğu_dizin
-python app.py
 ```
-NOT: Dilerseniz bu işlemi virtual enviroment oluşturarak yapın.
-Ya da direkt VS Code gibi bir IDE ile çalıştırma:
-```powershell
-python app.py
-```
-
 ## Calistirma
 
 ```powershell
 .\.venv\Scripts\python.exe .\app.py
 ```
+NOT: Dilerseniz bu işlemi virtual enviroment oluşturarak yapın.
+
+## IDE ile çalıştırma
+
+Ya da direkt VS Code gibi bir IDE ile çalıştırma:
+```powershell
+python app.py
+```
+
+
 
 ## Klasor Yapisi
 
