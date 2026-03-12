@@ -13,6 +13,10 @@ Soru bankasi, sinavlara hazirlik icin soru cozmeyi kolaylastirmak amaciyla gelis
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -U pip
 ```
+Ya da direkt VS Code gibi bir IDE ile çalıştırma
+```powershell
+python app.py
+```
 
 ## Calistirma
 
